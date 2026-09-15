@@ -1,1 +1,1 @@
-Build compact VKDialogExporter EXE.
+Build compact VKDialogExporter EXE — verified installer wait.
