@@ -1,1 +1,1 @@
-Build VK Dialog Exporter Windows artifact.
+Build VK Dialog Exporter Windows artifact - fixed packaging run.
