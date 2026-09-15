@@ -48,7 +48,11 @@ Section "Install" SEC01
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VKDialogExporter" "InstallLocation" "$INSTDIR"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\VKDialogExporter" "Publisher" "VK Dialog Exporter"
 
+    ; Normal interactive installs launch the app. In /S mode we intentionally
+    ; skip this so automated verification can wait for the installer process.
+    IfSilent skip_autorun
     Exec '"$INSTDIR\vk-dialog-exporter\.venv\Scripts\pythonw.exe" "$INSTDIR\vk-dialog-exporter\launcher.py"'
+    skip_autorun:
 SectionEnd
 
 Section "Uninstall"
