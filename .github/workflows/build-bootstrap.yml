@@ -46,8 +46,9 @@ jobs:
         shell: pwsh
         working-directory: bootstrap
         run: |
-          & '.\dist\VKDialogExporter.exe' /S
-          if ($LASTEXITCODE -ne 0) { throw "Installer returned $LASTEXITCODE" }
+          $installer = (Resolve-Path '.\dist\VKDialogExporter.exe').Path
+          $proc = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Installer returned $($proc.ExitCode)" }
           $project = Join-Path $env:LOCALAPPDATA 'Programs\VKDialogExporter\vk-dialog-exporter'
           $python = Join-Path $project '.venv\Scripts\python.exe'
           if (-not (Test-Path $python)) { throw 'Installed Python runtime not found' }
