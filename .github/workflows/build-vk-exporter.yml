@@ -29,6 +29,60 @@ jobs:
           Expand-Archive -Path source.zip -DestinationPath . -Force
           if (-not (Test-Path '.\vk-dialog-exporter\build_windows.ps1')) { throw 'Source archive did not restore correctly' }
 
+      - name: Apply verified Windows build script
+        shell: pwsh
+        run: |
+          $script = @'
+          $ErrorActionPreference = 'Stop'
+          Set-Location $PSScriptRoot
+
+          function Assert-LastExitCode([string]$Step) {
+            if ($LASTEXITCODE -ne 0) {
+              throw "$Step failed with exit code $LASTEXITCODE"
+            }
+          }
+
+          if (-not (Test-Path .venv-win)) {
+            python -m venv .venv-win
+            Assert-LastExitCode 'Creating Python virtual environment'
+          }
+
+          & .\.venv-win\Scripts\python.exe -m pip install --upgrade pip
+          Assert-LastExitCode 'Upgrading pip'
+
+          & .\.venv-win\Scripts\pip.exe install -r requirements-dev.txt
+          Assert-LastExitCode 'Installing dependencies'
+
+          $env:PYTHONPATH = (Join-Path $PSScriptRoot 'src')
+          & .\.venv-win\Scripts\python.exe -m pytest -q
+          Assert-LastExitCode 'Running tests'
+
+          Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+          & .\.venv-win\Scripts\pyinstaller.exe --clean --noconfirm vk_exporter.spec
+          Assert-LastExitCode 'Building Windows executable'
+
+          & .\dist\VKDialogExporter\VKDialogExporter.exe --smoke-test
+          Assert-LastExitCode 'Running packaged executable smoke test'
+
+          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) {
+            $found = Get-Command makensis.exe -ErrorAction SilentlyContinue
+            if ($found) { $makensis = $found.Source }
+          }
+          if (-not (Test-Path $makensis)) {
+            throw 'NSIS makensis.exe was not found after installation.'
+          }
+
+          $buildDir = Join-Path $PSScriptRoot 'dist\VKDialogExporter'
+          & $makensis "/DBUILD_DIR=$buildDir" packaging\installer.nsi
+          Assert-LastExitCode 'Building NSIS installer'
+
+          if (-not (Test-Path .\dist\VKDialogExporter-Setup.exe)) {
+            throw 'Installer build reported success but VKDialogExporter-Setup.exe is missing.'
+          }
+          '@
+          Set-Content -Path '.\vk-dialog-exporter\build_windows.ps1' -Value $script -Encoding UTF8
+
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
