@@ -1,0 +1,67 @@
+name: Build Compact VK Dialog Exporter EXE
+
+on:
+  push:
+    branches: [build-vk-bootstrap]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore bundled source archive
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -Path . -Filter 'vkchunk*.txt' | Sort-Object Name
+          if ($parts.Count -ne 5) { throw "Expected 5 source chunks, found $($parts.Count)" }
+          $base64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes((Join-Path $PWD 'source.zip'), [Convert]::FromBase64String($base64))
+          Copy-Item '.\source.zip' '.\bootstrap\source.zip' -Force
+          if (-not (Test-Path '.\bootstrap\source.zip')) { throw 'source.zip restore failed' }
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Build compact EXE installer
+        shell: pwsh
+        working-directory: bootstrap
+        run: |
+          New-Item -ItemType Directory -Force -Path '.\dist' | Out-Null
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) { throw 'makensis.exe not found' }
+          & $makensis '.\VKDialogExporterBootstrap.nsi'
+          if ($LASTEXITCODE -ne 0) { throw "NSIS failed with code $LASTEXITCODE" }
+          if (-not (Test-Path '.\dist\VKDialogExporter.exe')) { throw 'VKDialogExporter.exe was not created' }
+
+      - name: Silent install and smoke test
+        shell: pwsh
+        working-directory: bootstrap
+        run: |
+          & '.\dist\VKDialogExporter.exe' /S
+          if ($LASTEXITCODE -ne 0) { throw "Installer returned $LASTEXITCODE" }
+          $project = Join-Path $env:LOCALAPPDATA 'Programs\VKDialogExporter\vk-dialog-exporter'
+          $python = Join-Path $project '.venv\Scripts\python.exe'
+          if (-not (Test-Path $python)) { throw 'Installed Python runtime not found' }
+          & $python (Join-Path $project 'launcher.py') --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "Application smoke test returned $LASTEXITCODE" }
+          Get-FileHash '.\dist\VKDialogExporter.exe' -Algorithm SHA256
+          $size = (Get-Item '.\dist\VKDialogExporter.exe').Length
+          Write-Host "EXE size: $size bytes"
+          if ($size -gt 100MB) { throw 'Bootstrap EXE unexpectedly exceeds 100 MB' }
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: VKDialogExporter-EXE
+          if-no-files-found: error
+          retention-days: 7
+          path: bootstrap/dist/VKDialogExporter.exe
