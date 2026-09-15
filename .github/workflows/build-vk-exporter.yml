@@ -1,0 +1,62 @@
+name: Build VK Dialog Exporter Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout builder payload
+        uses: actions/checkout@v4
+
+      - name: Restore source archive
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem -Path . -Filter 'vkchunk*.txt' | Sort-Object Name
+          if ($parts.Count -ne 5) { throw "Expected 5 source chunks, found $($parts.Count)" }
+          $base64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          [IO.File]::WriteAllBytes((Join-Path $PWD 'source.zip'), [Convert]::FromBase64String($base64))
+          Expand-Archive -Path source.zip -DestinationPath . -Force
+          if (-not (Test-Path '.\vk-dialog-exporter\build_windows.ps1')) { throw 'Source archive did not restore correctly' }
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: vk-dialog-exporter/requirements-dev.txt
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Build, test and smoke-test Windows application
+        shell: pwsh
+        working-directory: vk-dialog-exporter
+        run: .\build_windows.ps1
+
+      - name: Create portable ZIP
+        shell: pwsh
+        working-directory: vk-dialog-exporter
+        run: |
+          Compress-Archive -Path '.\dist\VKDialogExporter\*' -DestinationPath '.\dist\VKDialogExporter-Portable.zip' -Force
+          Get-FileHash '.\dist\VKDialogExporter\VKDialogExporter.exe' -Algorithm SHA256
+          Get-FileHash '.\dist\VKDialogExporter-Setup.exe' -Algorithm SHA256
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VKDialogExporter-Windows
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            vk-dialog-exporter/dist/VKDialogExporter-Setup.exe
+            vk-dialog-exporter/dist/VKDialogExporter-Portable.zip
