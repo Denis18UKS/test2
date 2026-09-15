@@ -1,1 +1,1 @@
-Build compact VKDialogExporter EXE — verified installer wait.
+Build compact VKDialogExporter EXE — src layout fixed.
