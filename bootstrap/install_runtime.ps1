@@ -93,8 +93,17 @@ if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with code $LASTEXITCODE." }
 & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $project 'requirements.txt')
 if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed with code $LASTEXITCODE." }
 
+# The project intentionally uses a src/ layout. Add it to the venv import path so
+# launcher.py works from Explorer/desktop shortcuts without relying on PYTHONPATH.
+Write-Step 'Registering application package path...'
+$sitePackages = (& $venvPython -c "import site; print(site.getsitepackages()[0])" | Select-Object -First 1).Trim()
+if (-not $sitePackages -or -not (Test-Path $sitePackages)) { throw 'Could not resolve venv site-packages.' }
+$srcPath = Join-Path $project 'src'
+if (-not (Test-Path $srcPath)) { throw 'Application src directory was not found.' }
+Set-Content -Path (Join-Path $sitePackages 'vk_dialog_exporter_src.pth') -Value $srcPath -Encoding ASCII
+
 Write-Step 'Checking installed runtime...'
-& $venvPython -c "import requests, webview, PySide6, faster_whisper, keyring, av; print('Runtime OK')"
+& $venvPython -c "import requests, webview, PySide6, faster_whisper, keyring, av, vk_dialog_exporter; print('Runtime OK')"
 if ($LASTEXITCODE -ne 0) { throw 'Runtime self-check failed.' }
 
 Remove-Item $archive -Force -ErrorAction SilentlyContinue
